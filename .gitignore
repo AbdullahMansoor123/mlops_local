@@ -19,3 +19,9 @@ mlartifacts/
 penguins.db
 sample.json
 
+test.py
+test_data/*
+training_notebook.ipynb
+
+
+.github/*

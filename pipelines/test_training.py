@@ -45,13 +45,11 @@ configure_logging()
         "python-dotenv",
     ),
 )
-class Training(FlowSpec, FlowMixin):
-    """Training pipeline.
 
-    This pipeline trains, evaluates, and registers a model to predict the species of
-    penguins.
+class training(FlowSpec, FlowMixin):
     """
-
+    Training pipeline used for model training 
+    """
     accuracy_threshold = Parameter(
         "accuracy-threshold",
         help=(
@@ -61,18 +59,6 @@ class Training(FlowSpec, FlowMixin):
         ),
         default=0.7,
     )
-    
-
-    # import mlflow
-    # mlflow.start_run()
-    # # Path to your source code file or directory
-    # source_code_path = r"D:\PycharmProjects\ml_system_design_engineer\mlops_local\pipelines\training.py"
-    # # Log the source code as an artifact
-    # # mlflow_tracking_uri = os.getenv("MLFLOW_TRACKING_URI")
-    # mlflow.set_tracking_uri("http://127.0.0.1:5050")
-    # mlflow.log_artifact(local_path=source_code_path,artifact_path= 'source_code')
-    # # End the run
-    # mlflow.end_run()
 
 
 
@@ -123,6 +109,7 @@ class Training(FlowSpec, FlowMixin):
         # these two steps are independent, we can run them in parallel.
         self.next(self.cross_validation, self.transform)
 
+
     @card
     @step
     def cross_validation(self):
@@ -142,7 +129,7 @@ class Training(FlowSpec, FlowMixin):
         # `foreach` to run every cross-validation iteration in parallel. Notice how we
         # pass the tuple with the fold number and the indices to next step.
         self.next(self.transform_fold, foreach="folds")
-
+    
     @step
     def transform_fold(self):
         """Transform the data to build a model during the cross-validation process.
@@ -185,12 +172,15 @@ class Training(FlowSpec, FlowMixin):
         # to train a model.
         self.next(self.train_fold)
 
+        
+
     @card
     @environment(
         vars={
             "KERAS_BACKEND": os.getenv("KERAS_BACKEND", "jax"),
         },
     )
+
     @resources(memory=4096)
     @step
     def train_fold(self):
@@ -236,6 +226,7 @@ class Training(FlowSpec, FlowMixin):
 
         # After training a model for this fold, we want to evaluate it.
         self.next(self.evaluate_fold)
+        
 
     @card
     @environment(
@@ -256,29 +247,24 @@ class Training(FlowSpec, FlowMixin):
 
         # Let's evaluate the model using the test data we processed and stored as
         # artifacts during the `transform` step.
-        self.loss, self.accuracy = self.model.evaluate(
+        self.loss, self.accuracy  = self.model.evaluate(
             self.x_test,
             self.y_test,
             verbose=2,
         )
 
         # Get predictions
+        self.y_pred = self.model.predict(self.x_test)
 
-        y_pred = self.model.predict(self.x_test) 
-        #Convert probabilities to ordianll
-        import numpy as np
-        if not isinstance(y_pred, np.ndarray):
-            y_pred = np.array(y_pred)
-        self.y_pred_binary = np.argmax(y_pred, axis=1)
+        # Convert probabilities to binary predictions
+        self.y_pred_binary = (self.y_pred > 0.5).astype(int)
 
         # Calculate precision and recall using Scikit-learn
         from sklearn.metrics import precision_score, recall_score
 
-        self.precision = precision_score(self.y_test, self.y_pred_binary,average='weighted')
-        self.recall = recall_score(self.y_test, self.y_pred_binary, average='weighted')
-
-
-
+        self.precision = precision_score(self.y_test, self.y_pred_binary)
+        self.recall = recall_score(self.y_test, self.y_pred_binary)
+     
         logging.info(
             "Fold %d - loss: %f - accuracy: %f- avg_precision: %f- recall: %f",
             self.fold,
@@ -286,7 +272,8 @@ class Training(FlowSpec, FlowMixin):
             self.accuracy,
             self.precision,
             self.recall,
-            )
+    
+        )
 
         # Let's log everything under the same nested run we created when training the
         # current fold's model.
@@ -305,6 +292,7 @@ class Training(FlowSpec, FlowMixin):
         # to evaluate the overall performance of the model by averaging the scores from
         # each fold.
         self.next(self.evaluate_model)
+        
 
     @card
     @step
@@ -349,7 +337,7 @@ class Training(FlowSpec, FlowMixin):
         # to the registration step to register where we'll register the final version of
         # the model.
         self.next(self.register_model)
-
+    
     @card
     @step
     def transform(self):
@@ -540,7 +528,7 @@ class Training(FlowSpec, FlowMixin):
             ).items()
         ]
 
-    
+
 
 if __name__ == "__main__":
-    Training()
+    training()

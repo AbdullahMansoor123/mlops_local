@@ -32,18 +32,24 @@ TRAINING_EPOCHS = 50
 TRAINING_BATCH_SIZE = 32
 
 
+def get_all_data(dataset_path):
+    """given the data location will provide a single csv file with all the data"""
+    # Initialize an empty list to hold individual DataFrames
+    dataframes = []
+    # List all files in the folder
+    dataset_path = Path(dataset_path)
+    for file in dataset_path.glob("*.csv"):
+        df = pd.read_csv(file)  # Read the CSV file
+        dataframes.append(df)   # Append the DataFrame to the list
+    # Combine all DataFrames into one
+    data = pd.concat(dataframes, ignore_index=True)
+    return data
+
+
 class FlowMixin:
     """Base class used to share code across multiple pipelines."""
 
-    dataset = IncludeFile(
-        "penguins",
-        is_text=True,
-        help=(
-            "Local copy of the penguins dataset. This file will be included in the "
-            "flow and will be used whenever the flow is executed in development mode."
-        ),
-        default="data/penguins.csv",
-    )
+    dataset_path = "data"
 
     def load_dataset(self):
         """Load and prepare the dataset.
@@ -56,7 +62,7 @@ class FlowMixin:
         import numpy as np
 
         if current.is_production:
-            dataset = os.environ.get("DATASET", self.dataset)
+            dataset = os.environ.get("DATASET", self.dataset_path) # get it from env or used it from default location
 
             with S3(s3root=dataset) as s3:
                 files = s3.get_all()
@@ -66,9 +72,20 @@ class FlowMixin:
                 raw_data = [pd.read_csv(StringIO(file.text)) for file in files]
                 data = pd.concat(raw_data)
         else:
-            # When running in development mode, the raw data is passed as a string,
-            # so we can convert it to a DataFrame.
-            data = pd.read_csv(StringIO(self.dataset))
+
+            files = [file for file in os.listdir(self.dataset_path) if file.endswith('.csv')]
+            # Initialize an empty list to hold individual DataFrames
+            dataframes = []
+            # Loop through the CSV files and read them
+            for file in files:
+                file_path = os.path.join(self.dataset_path, file)  # Get the full file path
+                df = pd.read_csv(file_path)  # Read the CSV file
+                dataframes.append(df)  # Append the DataFrame to the list
+
+            # Combine all DataFrames into one
+            data = pd.concat(dataframes, ignore_index=True)
+
+            
 
         # Replace extraneous values in the sex column with NaN. We can handle missing
         # values later in the pipeline.
@@ -162,7 +179,6 @@ def build_features_transformer():
 def build_model(input_shape, learning_rate=0.01):
     """Build and compile the neural network to predict the species of a penguin."""
     from keras import Input, layers, models, optimizers
-
     model = models.Sequential(
         [
             Input(shape=(input_shape,)),
@@ -171,7 +187,7 @@ def build_model(input_shape, learning_rate=0.01):
             layers.Dense(3, activation="softmax"),
         ],
     )
-
+ 
     model.compile(
         optimizer=optimizers.SGD(learning_rate=learning_rate),
         loss="sparse_categorical_crossentropy",
